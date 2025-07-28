@@ -178,7 +178,7 @@ CMD =
 
 .PHONY: build
 build:
-	docker build --progress=plain --target $(TARGET) -t $(IMAGE_TAG) .
+	docker build --progress=plain --target $(TARGET) --platform linux/amd64 -t $(IMAGE_TAG) .
 
 .PHONY: run
 run:
@@ -186,6 +186,15 @@ run:
   -v `pwd`/test/web/index.html:/usr/src/octave-wasm/src/web/index.html \
   -v `pwd`/test/worker/index.html:/usr/src/octave-wasm/src/worker/index.html \
   $(IMAGE_TAG) $(CMD)
+
+.PHONY: extract
+extract:
+	@echo "Extracting octave-build.tar.gz from Docker image..."
+	@docker rm -f octave-wasm-extractor >/dev/null 2>&1 || true
+	@docker create --name octave-wasm-extractor $(IMAGE_TAG) >/dev/null
+	@docker cp octave-wasm-extractor:/usr/src/octave-wasm/octave-build.tar.gz .
+	@docker rm -f octave-wasm-extractor >/dev/null
+	@echo "Done. File is now in your current directory."
 
 .PHONY: dev
 dev:

@@ -3,7 +3,7 @@ FROM ubuntu:focal as builder
 RUN apt-get update && \
 	DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends \
 	build-essential autoconf automake libtool cmake file less \
-	texinfo flex librsvg2-bin icoutils gperf bison ghostscript gnuplot \
+	texinfo flex librsvg2-bin icoutils gperf bison ghostscript gnuplot tree \
 	python3 ca-certificates git openjdk-11-jre curl nano unzip \
 	&& rm -rf /var/lib/apt/lists/*
 
@@ -59,8 +59,9 @@ RUN cd $THIRDPARTYDIR/f2c-20160102 && \
 COPY third_party/libf2c2-20130926 $THIRDPARTYDIR/libf2c2-20130926
 #RUN make $LIBDIR/libf2c.so $INCDIR/f2c.h
 RUN cd $THIRDPARTYDIR/libf2c2-20130926 && \
-    emmake make -j${JOBS:-4} all libf2c.so && \
-    cp libf2c.so $LIBDIR && \
+    emmake make -j${JOBS:-4} all libf2c.a && \
+    tree . && \
+    cp libf2c.a $LIBDIR && \
     cp f2c.h0 $INCDIR/f2c.h
 
 
@@ -74,36 +75,48 @@ RUN cd $THIRDPARTYDIR/fort77-1.15 && \
 #FROM scratch as server
 
 COPY third_party/lapack-3.4.2 $THIRDPARTYDIR/lapack-3.4.2
-#RUN make $LIBDIR/librefblas.so
-#RUN make $LIBDIR/libclapack.so
 RUN cd $THIRDPARTYDIR/lapack-3.4.2 && \
-    emmake make -j${JOBS:-4} F77=$BINDIR/fort77 INCDIR=$INCDIR blaslib && \
-    cp librefblas.so $LIBDIR
-RUN cd $THIRDPARTYDIR/lapack-3.4.2 && \
-    emmake make -j${JOBS:-4} F77=$BINDIR/fort77 INCDIR=$INCDIR lapacklib && \
-    cp libclapack.so $LIBDIR
+    sed -i "s/TIMER *= *INT_ETIME/TIMER    = NONE/" make.inc && \
+    (cd BLAS/SRC && emmake make -j${JOBS:-4} F77=$BINDIR/fort77 || true) && \
+    (cd BLAS/SRC && emar cr ../../librefblas.a *.o) && \
+    emranlib librefblas.a && \
+    (cd INSTALL && emmake make -j${JOBS:-4} F77=$BINDIR/fort77) && \
+    (cd SRC && emmake make -j${JOBS:-4} F77=$BINDIR/fort77 || true) && \
+    (cd SRC && emar cr ../libclapack.a *.o) && \
+    emranlib libclapack.a && \
+    echo "--- Verifying librefblas.a ---" && \
+    emar t librefblas.a && \
+    echo "--- Verifying libclapack.a ---" && \
+    emar t libclapack.a && \
+    cp librefblas.a $LIBDIR && \
+    cp libclapack.a $LIBDIR
 
 
 COPY third_party/pcre-8.43 $THIRDPARTYDIR/pcre-8.43
 #RUN make $LIBDIR/libpcre.so
-#RUN cd $THIRDPARTYDIR/pcre-8.43 && \
-#    autoreconf -f -i && \
-#    emconfigure ./configure CFLAGS="-O0" --prefix=$INSTALLDIR --disable-static --enable-utf && \
-#    emmake make install
 RUN mkdir -p $THIRDPARTYDIR/pcre-8.43/build && \
     cd $THIRDPARTYDIR/pcre-8.43/build && \
-    CC=emcc CXX=em++ AR=emar RANLIB=emranlib cmake .. \
+    emcmake cmake .. \
     -DCMAKE_INSTALL_PREFIX=$INSTALLDIR \
-    -DBUILD_SHARED_LIBS=ON -DPCRE_BUILD_PCREGREP=OFF -DPCRE_BUILD_TESTS=OFF -DPCRE_SUPPORT_UTF=ON && \
-    make -j${JOBS:-4} && \
-    make install
+    -DBUILD_SHARED_LIBS=OFF -DPCRE_BUILD_PCREGREP=OFF -DPCRE_BUILD_TESTS=OFF -DPCRE_SUPPORT_UTF=ON && \
+    emmake make -j${JOBS:-4} && \
+    emar t libpcre.a && \
+    cp libpcre.a $LIBDIR && \
+    cp pcre.h $INCDIR
 
 
 COPY third_party/suitesparse-5.4.0 $THIRDPARTYDIR/suitesparse-5.4.0
 #RUN make $LIBDIR/libumfpack.so
 RUN cd $THIRDPARTYDIR/suitesparse-5.4.0 && \
-    emmake make INSTALL=$INSTALLDIR JOBS=${SSJOBS:-1} OPTIMIZATION=-O0 AUTOCC=no \
-    F77=$BINDIR/fort77 BLAS=-lrefblas LAPACK=-lclapack RANLIB=emranlib config install
+    sed -i -e "/( cd GraphBLAS /s/^/#/" -e "/( cd Mongoose /s/^/#/" -e "/( cd SPQR /s/^/#/" Makefile && \
+    emmake make -j${JOBS:-4} \
+        BLAS="$LIBDIR/librefblas.a" \
+        LAPACK="$LIBDIR/libclapack.a" \
+        RANLIB=emranlib static && \
+    emmake make \
+        BLAS="$LIBDIR/librefblas.a" \
+        LAPACK="$LIBDIR/libclapack.a" \
+        INSTALL=$INSTALLDIR install
 
 
 ENV OCTAVE_VER 7.2.0
@@ -124,14 +137,13 @@ RUN emconfigure ./configure \
     FLIBS="" \
     LDFLAGS="-s ERROR_ON_UNDEFINED_SYMBOLS=0 -L$LIBDIR -O0" \
     EMCC_FORCE_STDLIBS=1 \
-    EMCONFIGURE_JS=1 \
-    BUILD_EXEEXT=.js \
     --host=wasm32-local-emscripten \
     --prefix=$INSTALLDIR \
     --enable-shared --disable-static \
     --disable-threads --disable-openmp \
     --without-qt --disable-java --enable-fortran-calling-convention=f2c --disable-cross-tools \
     --disable-readline --disable-64 --disable-docs --without-curl --without-fftw3 \
+    --disable-dlopen --disable-dl --disable-dynamic-linking \
     --without-fftw3f --without-hdf5 --without-opengl --without-qrupdate --without-framework-carbon --without-framework-opengl --without-x \
     --without-arpack --with-blas=-lrefblas --with-lapack=-lclapack \
     --without-sndfile --without-portaudio --without-freetype --without-fontconfig --without-fltk --without-qrupdate \
@@ -139,37 +151,45 @@ RUN emconfigure ./configure \
     --with-pcre-includedir=$INCDIR --with-pcre-libdir=$LIBDIR --without-cxsparse --without-ccolamd \
     --without-z --without-bz2 --without-magick --without-spqr --without-glpk --disable-rapidjson
 
-RUN emmake make -j${OCTJOBS:-4}
+RUN emmake make -j8
 RUN emmake make install
 
+# FIXME: need to make it return tar.bz2 instead
+RUN tar -czvf /usr/src/octave-wasm/octave-build.tar.gz -C $INSTALLDIR .
 
-COPY src $PROJECTDIR/src
-WORKDIR $PROJECTDIR/src
-#RUN make all
-RUN make web/octave.js
-#RUN make worker/octave.js
-#RUN make node/octave.js
+#RUN tree .
+#RUN mkdir -p $THIRDPARTYDIR/output
+# move the built file to the output directory
 
 
-ARG USER_ID=1000
-ARG GROUP_ID=1000
 
-RUN addgroup --gid $GROUP_ID dev
-RUN adduser --disabled-password --gecos '' --uid $USER_ID --gid $GROUP_ID dev
+#COPY src $PROJECTDIR/src
+#WORKDIR $PROJECTDIR/src
+##RUN make all
+#RUN make web/octave.js
+##RUN make worker/octave.js
+##RUN make node/octave.js
 
-RUN mkdir -p $PROJECTDIR/src/web
-COPY test/web/index.html $PROJECTDIR/src/web
-COPY test/server3.py $PROJECTDIR/src/web
-WORKDIR $PROJECTDIR/src/web
 
-#RUN mkdir -p $PROJECTDIR/src/worker
-#COPY test/worker/index.html $PROJECTDIR/src/worker
-#COPY test/worker/worker.js $PROJECTDIR/src/worker
-#COPY test/worker/promise-worker.js $PROJECTDIR/src/worker
-#COPY test/worker/promise-worker.register.js $PROJECTDIR/src/worker
-#COPY test/server3.py $PROJECTDIR/src/worker
-#WORKDIR $PROJECTDIR/src/worker
-
-EXPOSE 8080
-CMD ["python3", "/usr/src/octave-wasm/src/web/server3.py"]
-#CMD ["python3", "/usr/src/octave-wasm/src/worker/server3.py"]
+#ARG USER_ID=1000
+#ARG GROUP_ID=1000
+#
+#RUN addgroup --gid $GROUP_ID dev
+#RUN adduser --disabled-password --gecos '' --uid $USER_ID --gid $GROUP_ID dev
+#
+#RUN mkdir -p $PROJECTDIR/src/web
+#COPY test/web/index.html $PROJECTDIR/src/web
+#COPY test/server3.py $PROJECTDIR/src/web
+#WORKDIR $PROJECTDIR/src/web
+#
+##RUN mkdir -p $PROJECTDIR/src/worker
+##COPY test/worker/index.html $PROJECTDIR/src/worker
+##COPY test/worker/worker.js $PROJECTDIR/src/worker
+##COPY test/worker/promise-worker.js $PROJECTDIR/src/worker
+##COPY test/worker/promise-worker.register.js $PROJECTDIR/src/worker
+##COPY test/server3.py $PROJECTDIR/src/worker
+##WORKDIR $PROJECTDIR/src/worker
+#
+#EXPOSE 8080
+#CMD ["python3", "/usr/src/octave-wasm/src/web/server3.py"]
+##CMD ["python3", "/usr/src/octave-wasm/src/worker/server3.py"]
