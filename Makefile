@@ -189,10 +189,10 @@ run:
 
 .PHONY: extract
 extract:
-	@echo "Extracting octave-build.tar.gz from Docker image..."
+	@echo "Extracting octave-build.tar.bz2 from Docker image..."
 	@docker rm -f octave-wasm-extractor >/dev/null 2>&1 || true
 	@docker create --name octave-wasm-extractor $(IMAGE_TAG) >/dev/null
-	@docker cp octave-wasm-extractor:/usr/src/octave-wasm/octave-build.tar.gz .
+	@docker cp octave-wasm-extractor:/usr/src/octave-wasm/octave-build.tar.bz2 .
 	@docker rm -f octave-wasm-extractor >/dev/null
 	@echo "Done. File is now in your current directory."
 
