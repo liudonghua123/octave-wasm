@@ -190,3 +190,17 @@ run:
 .PHONY: dev
 dev:
 	docker run -it -p 8080:8080 -v `pwd`:/usr/src/octave-wasm -w /usr/src/octave-wasm --user `id -u`:`id -g` $(IMAGE_TAG) bash
+
+.PHONY: dist
+
+dist: src-dist
+
+src-dist:
+	@echo "Building web assets inside docker builder image and copying to dist/"
+	$(MAKE) build
+	@echo "Creating temporary container from $(IMAGE_TAG) and copying /usr/src/octave-wasm/src/web -> dist/"
+	@cid=`docker create $(IMAGE_TAG)` && \
+	  rm -rf dist && mkdir -p dist && \
+	  docker cp $$cid:/usr/src/octave-wasm/src/web/. dist/ || (docker rm $$cid && echo "docker cp failed" && exit 1) && \
+	  docker rm $$cid
+	@echo "Source distribution created in dist/"

@@ -1,0 +1,30 @@
+{
+  "name": "@liudonghua123/octave-wasm",
+  "version": "0.0.1",
+  "description": "GNU Octave compiled to WebAssembly for use in the browser and web workers.",
+  "main": "dist/octave.js",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "make dist"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liudonghua123/octave-wasm.git"
+  },
+  "keywords": [
+    "octave",
+    "wasm",
+    "webassembly",
+    "emscripten"
+  ],
+  "author": "Richard Lincoln <>",
+  "license": "BSD-3-Clause",
+  "bugs": {
+    "url": "https://github.com/liudonghua123/octave-wasm/issues"
+  },
+  "homepage": "https://github.com/liudonghua123/octave-wasm#readme"
+}
